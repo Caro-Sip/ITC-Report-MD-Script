@@ -101,6 +101,9 @@ def get_file_settings() -> dict:
     if not file_ext.startswith("."):
         file_ext = f".{file_ext}"
     
+    # Absolute path option
+    use_absolute_paths = ask_yes_no("Use absolute paths?", False)
+    
     # Scan mode selection
     scan_mode_choices = ["Auto-scan for lab* folders", "Manually specify directories"]
     scan_mode = ask_choice("How would you like to select directories?", scan_mode_choices, "Auto-scan for lab* folders")
@@ -123,6 +126,14 @@ def get_file_settings() -> dict:
     
     # Output directory
     output_dir = ask("Output directory for reports", "reports")
+    
+    # Convert to absolute paths if requested
+    if use_absolute_paths:
+        if target_dirs:
+            target_dirs = [str(Path(d).resolve()) for d in target_dirs]
+        else:
+            scan_dir = str(Path(scan_dir).resolve())
+        output_dir = str(Path(output_dir).resolve())
     
     return {
         "language": lang,

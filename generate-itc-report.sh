@@ -5,6 +5,7 @@ set -euo pipefail
 # Usage:
 #   bash scripts/generate-itc-report.sh
 #   bash scripts/generate-itc-report.sh --scan-dir ./lab-archive
+#   bash scripts/generate-itc-report.sh --absolute-path lab01
 #   bash scripts/generate-itc-report.sh lab01 ../other-course/lab03
 #
 # Optional environment variables:
@@ -23,11 +24,18 @@ STUDENT_MAJOR="${STUDENT_MAJOR:-insert your major}"
 STUDENT_COURSE="${STUDENT_COURSE:-insert your course}"
 INSTRUCTION_LINK="${INSTRUCTION_LINK:-link to pdf}"
 SCAN_DIR="${SCAN_DIR:-.}"
+USE_ABSOLUTE_PATHS=false
 
 usage() {
   cat <<'EOF'
 Usage:
-  bash scripts/generate-itc-report.sh [--scan-dir DIR] [--file-name NAME] [TARGET_DIR ...]
+  bash scripts/generate-itc-report.sh [--scan-dir DIR] [--file-name NAME] [--absolute-path] [TARGET_DIR ...]
+
+Options:
+  --scan-dir, -s DIR       Directory to scan for lab* folders
+  --file-name, -f NAME     Base name for output report files
+  --absolute-path, -a      Convert all paths to absolute paths
+  --help, -h               Show this help message
 
 Behavior:
   - If TARGET_DIR is provided, each directory is scanned for Ex*.java.
@@ -36,6 +44,7 @@ Behavior:
 Examples:
   bash scripts/generate-itc-report.sh
   bash scripts/generate-itc-report.sh --scan-dir ./archives
+  bash scripts/generate-itc-report.sh --absolute-path
   bash scripts/generate-itc-report.sh --file-name OOP_Name_03 lab03
   bash scripts/generate-itc-report.sh lab01 ../another-project/lab02
 
@@ -55,6 +64,10 @@ while [[ "$#" -gt 0 ]]; do
       SCAN_DIR="$2"
       shift 2
       ;;
+    --absolute-path|-a)
+      USE_ABSOLUTE_PATHS=true
+      shift
+      ;;
     --help|-h)
       usage
       exit 0
@@ -73,6 +86,27 @@ while [[ "$#" -gt 0 ]]; do
       ;;
   esac
 done
+
+# Convert paths to absolute if requested
+if [[ "$USE_ABSOLUTE_PATHS" == true ]]; then
+  if [[ "${#TARGET_DIRS[@]}" -gt 0 ]]; then
+    # Convert target directories to absolute paths
+    for i in "${!TARGET_DIRS[@]}"; do
+      TARGET_DIRS["$i"]="$(cd "${TARGET_DIRS[$i]}" && pwd)" || {
+        echo "Error: Cannot resolve path: ${TARGET_DIRS[$i]}"
+        exit 1
+      }
+    done
+  else
+    # Convert scan directory to absolute path
+    SCAN_DIR="$(cd "$SCAN_DIR" && pwd)" || {
+      echo "Error: Cannot resolve path: $SCAN_DIR"
+      exit 1
+    }
+  fi
+  # Convert output directory to absolute path
+  OUTPUT_DIR="$(mkdir -p "$OUTPUT_DIR" && cd "$OUTPUT_DIR" && pwd)"
+fi
 
 mkdir -p "$OUTPUT_DIR"
 
@@ -156,13 +190,20 @@ EOF
       base_name="$(basename "$file" .java)"
       ex_tag="${base_name%%_*}"
       ex_id="${ex_tag#Ex}"
-      rel_file="${file#./}"
+      
+      # Use absolute path if requested, otherwise use relative path
+      if [[ "$USE_ABSOLUTE_PATHS" == true ]]; then
+        display_file="$(cd "$(dirname "$file")" && pwd)/$(basename "$file")"
+      else
+        rel_file="${file#./}"
+        display_file="$rel_file"
+      fi
 
       cat <<EOF
 ## Exercise $ex_id
 
 > [!example]
-> Source file: \`$rel_file\`
+> Source file: \`$display_file\`
 
 \`\`\`java
 EOF
