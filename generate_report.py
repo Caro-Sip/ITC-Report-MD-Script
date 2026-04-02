@@ -60,6 +60,7 @@ def get_metadata() -> dict:
     print("="*60 + "\n")
     
     subject = ask("Subject/Course name (e.g., DSA, OOP)", "DSA")
+    report_title = ask("Report title", "Lab Report")
     student_name = ask("Your name", "insert your name")
     student_major = ask("Your major", "insert your major")
     student_course = ask("Course name", "insert your course")
@@ -67,6 +68,7 @@ def get_metadata() -> dict:
     
     return {
         "subject": subject,
+        "report_title": report_title,
         "student_name": student_name,
         "student_major": student_major,
         "student_course": student_course,
@@ -160,18 +162,41 @@ def find_lab_dirs(scan_dir: str) -> list:
     return lab_dirs
 
 
-def find_exercise_files(lab_dir: Path, file_ext: str) -> list:
-    """Find all Ex*.{ext} files in a lab directory."""
+def find_exercise_groups(lab_dir: Path, file_ext: str) -> dict:
+    """Find exercise files and group them by exercise id.
+
+    For each Ex* file (recursive), include all files with the same
+    extension in the same folder as that exercise file.
+    """
     pattern = f"Ex*{file_ext}"
-    files = sorted(lab_dir.glob(pattern), key=lambda x: x.name)
-    return files
+    exercise_files = sorted(lab_dir.rglob(pattern), key=lambda x: x.name)
+    groups = {}
+
+    for ex_file in exercise_files:
+        base_name = ex_file.stem
+        ex_tag = base_name.split("_")[0]
+        ex_id = ex_tag.replace("Ex", "")
+
+        sibling_files = sorted(ex_file.parent.glob(f"*{file_ext}"), key=lambda x: x.name)
+        group = groups.setdefault(ex_id, set())
+        for f in sibling_files:
+            group.add(f)
+
+    # Convert sets to sorted lists for stable output
+    ordered = {}
+    for ex_id in sorted(groups.keys(), key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else x)):
+        files = sorted(groups[ex_id], key=lambda x: x.name)
+        ex_files = [f for f in files if f.stem.startswith(f"Ex{ex_id}")]
+        other_files = [f for f in files if f not in ex_files]
+        ordered[ex_id] = ex_files + other_files
+    return ordered
 
 
 def generate_report(lab_dir: Path, output_dir: str, metadata: dict, file_settings: dict) -> str:
     """Generate a single report for a lab directory."""
-    files = find_exercise_files(lab_dir, file_settings["file_ext"])
+    exercise_groups = find_exercise_groups(lab_dir, file_settings["file_ext"])
     
-    if not files:
+    if not exercise_groups:
         return None
     
     # Create output directory
@@ -185,13 +210,13 @@ def generate_report(lab_dir: Path, output_dir: str, metadata: dict, file_setting
     if not lab_number:
         lab_number = lab_name.replace("lab", "")
     
-    # Format: subject_FirstName_labnumber.md
-    student_first_name = metadata["student_name"].split()[0] if metadata["student_name"] else "Name"
-    report_file = Path(output_dir) / f"{metadata['subject']}_{student_first_name}_lab{lab_number}.md"
+    # Format: subject_SurnameFullname_labnumber.md (no spaces)
+    student_name_no_space = "".join(metadata["student_name"].split()) if metadata["student_name"] else "Name"
+    report_file = Path(output_dir) / f"{metadata['subject']}_{student_name_no_space}_lab{lab_number}.md"
     
     # Create report content
     created_date = datetime.now().strftime("%Y-%m-%d")
-    report_title = f"{lab_name.upper()} Report"
+    report_title = metadata["report_title"]
     lang = file_settings["language"]
     
     content = f"""---
@@ -233,39 +258,40 @@ Language: `{lang}`
     
     # Add exercises
     lang_code = file_settings["file_ext"].lstrip(".")
-    for file in files:
-        base_name = file.stem  # filename without extension
-        ex_tag = base_name.split("_")[0]
-        ex_id = ex_tag.replace("Ex", "")
-        
-        # Get relative path for display
-        try:
-            rel_path = file.relative_to(Path.cwd())
-        except ValueError:
-            # If file is not relative to cwd, just use the absolute path
-            rel_path = file.resolve()
-        
+    for ex_id, files in exercise_groups.items():
         content += f"""## Exercise {ex_id}
 
-> [!example]
+"""
+
+        for file in files:
+            # Get relative path for display
+            try:
+                rel_path = file.relative_to(Path.cwd())
+            except ValueError:
+                # If file is not relative to cwd, just use the absolute path
+                rel_path = file.resolve()
+
+            content += f"""> [!example]
 > Source file: `{rel_path}`
 
 ```{lang_code}
 """
-        
-        try:
-            with open(file, 'r') as f:
-                file_content = f.read()
-                # Ensure code block ends with newline for proper formatting
-                if not file_content.endswith('\n'):
-                    file_content += '\n'
-                content += file_content
-        except Exception as e:
-            content += f"ERROR: Could not read file: {e}"
-        
-        content += """```
 
-![[Output Image.png]]
+            try:
+                with open(file, 'r') as f:
+                    file_content = f.read()
+                    # Ensure code block ends with newline for proper formatting
+                    if not file_content.endswith('\n'):
+                        file_content += '\n'
+                    content += file_content
+            except Exception as e:
+                content += f"ERROR: Could not read file: {e}"
+
+            content += """```
+
+"""
+
+        content += """![[Output Image.png]]
 
 """
     
