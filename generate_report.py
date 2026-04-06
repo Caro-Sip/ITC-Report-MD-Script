@@ -66,6 +66,16 @@ def get_metadata() -> dict:
     student_course = ask("Course name", "insert your course")
     instruction_link = ask("Instruction link (URL)", "link to pdf")
     
+    # Get lecturer names
+    print("\nLecturer Information:")
+    lecturers = []
+    while True:
+        lecturer_name = ask(f"Lecturer name (or 'done' to finish)", "")
+        if lecturer_name.lower() == "done" or not lecturer_name:
+            break
+        lecturers.append(lecturer_name)
+        print(f"  Added: {lecturer_name}")
+    
     return {
         "subject": subject,
         "report_title": report_title,
@@ -73,6 +83,7 @@ def get_metadata() -> dict:
         "student_major": student_major,
         "student_course": student_course,
         "instruction_link": instruction_link,
+        "lecturers": lecturers,
     }
 
 
@@ -219,6 +230,11 @@ def generate_report(lab_dir: Path, output_dir: str, metadata: dict, file_setting
     report_title = metadata["report_title"]
     lang = file_settings["language"]
     
+    # Format lecturer names for display
+    lecturers_text = ""
+    if metadata.get("lecturers"):
+        lecturers_text = "\n".join([f"<p style=\"margin: 0;\">Lecturer: {lecturer}</p>" for lecturer in metadata["lecturers"]])
+    
     content = f"""---
 created: {created_date}
 title: {report_title}
@@ -238,6 +254,7 @@ tags:
 <p style="margin: 0;">Student: {metadata['student_name']}</p>
 <p style="margin: 0;">Major: {metadata['student_major']}</p>
 <p style="margin: 0;">Course: {metadata['student_course']}</p>
+{lecturers_text}
 <p style="margin: 0;">Lab: {lab_name}</p>
 <p style="margin: 0;">Date: {created_date}</p>
 </div>
@@ -248,7 +265,14 @@ tags:
 Student: `{metadata['student_name']}`
 Major: `{metadata['student_major']}`
 Course: `{metadata['student_course']}`
-Instruction: `{metadata['instruction_link']}`
+"""
+    
+    # Add lecturer information to overview
+    if metadata.get("lecturers"):
+        for lecturer in metadata["lecturers"]:
+            content += f"Lecturer: `{lecturer}`\n"
+    
+    content += f"""Instruction: `{metadata['instruction_link']}`
 
 Language: `{lang}`
 
