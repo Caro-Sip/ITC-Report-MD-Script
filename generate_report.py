@@ -176,22 +176,47 @@ def find_lab_dirs(scan_dir: str) -> list:
 def find_exercise_groups(lab_dir: Path, file_ext: str) -> dict:
     """Find exercise files and group them by exercise id.
 
-    For each Ex* file (recursive), include all files with the same
-    extension in the same folder as that exercise file.
+    For each directory containing Ex* files:
+    - files named with an exercise prefix (e.g., Ex1_*.cpp) are grouped
+      under that exercise id.
+    - shared files in the same directory are attached only once to the
+      first exercise id in that directory to avoid duplication.
     """
     pattern = f"Ex*{file_ext}"
     exercise_files = sorted(lab_dir.rglob(pattern), key=lambda x: x.name)
     groups = {}
 
-    for ex_file in exercise_files:
-        base_name = ex_file.stem
+    def extract_ex_id(file_path: Path) -> str:
+        base_name = file_path.stem
         ex_tag = base_name.split("_")[0]
-        ex_id = ex_tag.replace("Ex", "")
+        return ex_tag.replace("Ex", "")
 
-        sibling_files = sorted(ex_file.parent.glob(f"*{file_ext}"), key=lambda x: x.name)
-        group = groups.setdefault(ex_id, set())
-        for f in sibling_files:
-            group.add(f)
+    # Group exercise source files by parent directory first
+    by_parent = {}
+    for ex_file in exercise_files:
+        by_parent.setdefault(ex_file.parent, []).append(ex_file)
+
+    for parent_dir, ex_files_in_dir in by_parent.items():
+        sibling_files = sorted(parent_dir.glob(f"*{file_ext}"), key=lambda x: x.name)
+
+        # Build exercise ids found in this directory
+        ex_ids_in_dir = sorted({extract_ex_id(f) for f in ex_files_in_dir}, key=lambda x: (not x.isdigit(), int(x) if x.isdigit() else x))
+
+        # Add exercise-specific files (Ex{id}*) to their own group
+        for ex_id in ex_ids_in_dir:
+            group = groups.setdefault(ex_id, set())
+            ex_specific = [f for f in sibling_files if f.stem.startswith(f"Ex{ex_id}")]
+            for f in ex_specific:
+                group.add(f)
+
+        # Files without Ex* prefix are shared helpers for this directory.
+        # Attach them once to the first exercise id to avoid duplicates.
+        shared_files = [f for f in sibling_files if not f.stem.startswith("Ex")]
+        if shared_files and ex_ids_in_dir:
+            first_ex_id = ex_ids_in_dir[0]
+            group = groups.setdefault(first_ex_id, set())
+            for f in shared_files:
+                group.add(f)
 
     # Convert sets to sorted lists for stable output
     ordered = {}
